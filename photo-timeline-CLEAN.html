@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChronoFrame - Local Photo Timeline</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-ink: #1a1a1a;
+            --color-paper: #f8f6f1;
+            --color-sepia: #d4c5a9;
+            --color-gold: #c9a961;
+            --color-shadow: rgba(0, 0, 0, 0.08);
+            --color-border: rgba(26, 26, 26, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: 140px; /* Account for sticky header */
+        }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: linear-gradient(135deg, var(--color-paper) 0%, #ede8dc 100%);
+            color: var(--color-ink);
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        .app-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .app-header {
+            background: linear-gradient(135deg, rgba(26, 26, 26, 0.95) 0%, rgba(50, 45, 38, 0.95) 100%);
+            backdrop-filter: blur(20px);
+            border-bottom: 2px solid var(--color-gold);
+            padding: 2rem 3rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .app-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            font-weight: 900;
+            color: var(--color-paper);
+            letter-spacing: -0.02em;
+            position: relative;
+            display: inline-block;
+        }
+
+        .app-subtitle {
+            font-size: 0.875rem;
+            color: var(--color-sepia);
+            margin-top: 0.25rem;
+            font-weight: 400;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .stat-item {
+            text-align: right;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--color-gold);
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--color-sepia);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        /* Controls */
+        .controls-section {
+            padding: 2rem 3rem;
+            background: rgba(255, 255, 255, 0.5);
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .scan-area {
+            border: 3px dashed var(--color-gold);
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 16px;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .scan-area::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(201, 169, 97, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .scan-area:hover::before {
+            left: 100%;
+        }
+
+        .scan-area:hover {
+            border-color: var(--color-ink);
+            background: rgba(255, 255, 255, 0.9);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 48px var(--color-shadow);
+        }
+
+        .scan-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: var(--color-gold);
+        }
+
+        .scan-text {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--color-ink);
+            margin-bottom: 0.5rem;
+        }
+
+        .scan-hint {
+            font-size: 0.875rem;
+            color: #666;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Processing indicator */
+        .processing-bar {
+            padding: 1.5rem 3rem;
+            background: linear-gradient(135deg, rgba(201, 169, 97, 0.1), rgba(212, 197, 169, 0.1));
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .progress-container {
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 12px;
+            height: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-gold), var(--color-sepia));
+            transition: width 0.3s ease;
+            border-radius: 12px;
+        }
+
+        .progress-text {
+            text-align: center;
+            margin-top: 0.75rem;
+            font-size: 0.875rem;
+            color: var(--color-ink);
+            font-weight: 500;
+        }
+
+        /* Timeline */
+        .timeline-container {
+            padding: 3rem;
+        }
+
+        .timeline-year {
+            margin-bottom: 4rem;
+            animation: fadeInUp 0.6s ease forwards;
+            opacity: 0;
+            scroll-margin-top: 140px; /* Ensures proper positioning when scrolling */
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .year-header {
+            font-family: 'Playfair Display', serif;
+            font-size: 3rem;
+            font-weight: 900;
+            color: var(--color-ink);
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 3px solid var(--color-gold);
+            position: relative;
+            letter-spacing: -0.02em;
+        }
+
+        .year-header::after {
+            content: '';
+            position: absolute;
+            bottom: -3px;
+            left: 0;
+            width: 120px;
+            height: 3px;
+            background: var(--color-ink);
+        }
+
+        .timeline-month {
+            margin-bottom: 3rem;
+            scroll-margin-top: 140px; /* Ensures proper positioning when scrolling */
+        }
+
+        .month-header {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--color-ink);
+            margin-bottom: 1.5rem;
+            padding-left: 1rem;
+            border-left: 4px solid var(--color-gold);
+        }
+
+        .photos-grid {
+            display: grid;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .photos-grid.grid-2x2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .photos-grid.grid-3x3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .photos-grid.grid-4x4 {
+            grid-template-columns: repeat(4, 1fr);
+        }
+
+        .photos-grid.grid-5x5 {
+            grid-template-columns: repeat(5, 1fr);
+        }
+
+        .photos-grid.grid-auto {
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1400px) {
+            .photos-grid.grid-5x5 {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        @media (max-width: 1200px) {
+            .photos-grid.grid-4x4,
+            .photos-grid.grid-5x5 {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .photos-grid.grid-3x3,
+            .photos-grid.grid-4x4,
+            .photos-grid.grid-5x5 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .photos-grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
+
+        .photo-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px var(--color-shadow);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            animation: fadeIn 0.5s ease forwards;
+            opacity: 0;
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes highlightFlash {
+            0% {
+                background: transparent;
+            }
+            50% {
+                background: rgba(201, 169, 97, 0.1);
+            }
+            100% {
+                background: transparent;
+            }
+        }
+
+        .timeline-year.highlight {
+            animation: highlightFlash 1.5s ease;
+        }
+
+        .timeline-month.highlight {
+            animation: highlightFlash 1.5s ease;
+        }
+
+        .photo-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .photo-image {
+            width: 100%;
+            height: 240px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .photo-info {
+            padding: 1rem;
+            background: linear-gradient(135deg, rgba(248, 246, 241, 0.9), rgba(255, 255, 255, 0.9));
+        }
+
+        .photo-date {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--color-ink);
+            margin-bottom: 0.25rem;
+        }
+
+        .photo-time {
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        .photo-meta {
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--color-border);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 2rem;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-content {
+            max-width: 90vw;
+            max-height: 90vh;
+            position: relative;
+            animation: scaleIn 0.3s ease;
+        }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0.9);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .modal-image {
+            max-width: 100%;
+            max-height: 80vh;
+            border-radius: 8px;
+            box-shadow: 0 20px 80px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-info {
+            background: rgba(26, 26, 26, 0.9);
+            backdrop-filter: blur(20px);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            color: var(--color-paper);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: -3rem;
+            right: 0;
+            background: var(--color-gold);
+            color: var(--color-ink);
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-weight: 700;
+        }
+
+        .modal-close:hover {
+            background: var(--color-paper);
+            transform: rotate(90deg);
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #666;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+
+        .empty-text {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 2rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--color-gold), var(--color-sepia));
+            color: var(--color-ink);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(201, 169, 97, 0.3);
+        }
+
+        .view-controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            padding: 0 3rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .view-btn {
+            padding: 0.5rem 1.5rem;
+            background: rgba(255, 255, 255, 0.7);
+            border: 2px solid var(--color-border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            color: var(--color-ink);
+        }
+
+        .view-btn.active {
+            background: var(--color-gold);
+            border-color: var(--color-gold);
+            color: white;
+        }
+
+        .view-btn:hover:not(.active) {
+            background: rgba(255, 255, 255, 0.9);
+            border-color: var(--color-gold);
+        }
+
+        .grid-size-selector {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            background: rgba(255, 255, 255, 0.7);
+            border: 2px solid var(--color-border);
+            border-radius: 8px;
+        }
+
+        .grid-size-label {
+            font-size: 0.875rem;
+            color: var(--color-ink);
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+
+        .grid-size-btn {
+            padding: 0.5rem 1rem;
+            background: transparent;
+            border: 2px solid var(--color-border);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            color: var(--color-ink);
+            font-size: 0.875rem;
+        }
+
+        .grid-size-btn.active {
+            background: var(--color-gold);
+            border-color: var(--color-gold);
+            color: white;
+        }
+
+        .grid-size-btn:hover:not(.active) {
+            background: rgba(201, 169, 97, 0.1);
+            border-color: var(--color-gold);
+        }
+
+        .cache-stats {
+            display: flex;
+            gap: 1rem;
+            padding: 0.5rem 1rem;
+            background: rgba(201, 169, 97, 0.1);
+            border-radius: 8px;
+            font-size: 0.75rem;
+            color: var(--color-ink);
+        }
+
+        .cache-stat-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .cache-stat-value {
+            font-weight: 700;
+            color: var(--color-gold);
+        }
+
+        /* Timeline Navigator */
+        .timeline-navigator {
+            position: fixed;
+            right: 2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            border: 2px solid var(--color-gold);
+            border-radius: 12px;
+            padding: 1rem;
+            max-height: 70vh;
+            overflow-y: auto;
+            z-index: 90;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            min-width: 180px;
+        }
+
+        .timeline-navigator.draggable {
+            cursor: move;
+        }
+
+        .timeline-navigator.dragging {
+            cursor: grabbing;
+            user-select: none;
+        }
+
+        .timeline-navigator::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .timeline-navigator::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .timeline-navigator::-webkit-scrollbar-thumb {
+            background: var(--color-gold);
+            border-radius: 3px;
+        }
+
+        .timeline-nav-header {
+            color: var(--color-gold);
+            font-weight: 700;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--color-gold);
+            cursor: move;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .timeline-nav-header::after {
+            content: '⋮⋮';
+            font-size: 1rem;
+            opacity: 0.5;
+        }
+
+        .timeline-nav-header:hover::after {
+            opacity: 1;
+        }
+
+        .timeline-nav-year {
+            margin-bottom: 1rem;
+        }
+
+        .timeline-nav-year-btn {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: var(--color-paper);
+            font-size: 1.25rem;
+            font-weight: 700;
+            font-family: 'Playfair Display', serif;
+            cursor: pointer;
+            padding: 0.5rem;
+            text-align: left;
+            transition: all 0.3s ease;
+            border-radius: 6px;
+        }
+
+        .timeline-nav-year-btn:hover {
+            background: rgba(201, 169, 97, 0.2);
+            color: var(--color-gold);
+        }
+
+        .timeline-nav-year-btn.active {
+            background: rgba(201, 169, 97, 0.3);
+            color: var(--color-gold);
+            border-left: 3px solid var(--color-gold);
+        }
+
+        .timeline-nav-months {
+            margin-top: 0.5rem;
+            padding-left: 0.5rem;
+        }
+
+        .timeline-nav-month-btn {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: var(--color-sepia);
+            font-size: 0.875rem;
+            cursor: pointer;
+            padding: 0.375rem 0.5rem;
+            text-align: left;
+            transition: all 0.3s ease;
+            border-radius: 4px;
+            font-family: 'DM Sans', sans-serif;
+        }
+
+        .timeline-nav-month-btn:hover {
+            background: rgba(201, 169, 97, 0.15);
+            color: var(--color-gold);
+        }
+
+        .timeline-nav-month-btn.active {
+            background: rgba(201, 169, 97, 0.25);
+            color: var(--color-gold);
+            font-weight: 600;
+            border-left: 2px solid var(--color-gold);
+        }
+
+        .timeline-nav-month-count {
+            float: right;
+            font-size: 0.75rem;
+            color: var(--color-gold);
+            font-weight: 600;
+        }
+
+        .timeline-nav-toggle {
+            position: fixed;
+            right: 2rem;
+            bottom: 2rem;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--color-gold), var(--color-sepia));
+            border: none;
+            color: var(--color-ink);
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(201, 169, 97, 0.4);
+            transition: all 0.3s ease;
+            z-index: 89;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .timeline-nav-toggle:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 28px rgba(201, 169, 97, 0.6);
+        }
+
+        .timeline-nav-toggle.active {
+            background: linear-gradient(135deg, var(--color-ink), #2a2a2a);
+            color: var(--color-gold);
+        }
+
+        @media (max-width: 768px) {
+            .timeline-navigator {
+                right: 1rem;
+                max-height: 60vh;
+                min-width: 150px;
+            }
+            
+            .timeline-nav-toggle {
+                right: 1rem;
+                bottom: 1rem;
+                width: 50px;
+                height: 50px;
+                font-size: 1.25rem;
+            }
+        }
+
+        /* Decorative elements */
+        .decorative-line {
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--color-gold), transparent);
+            margin: 3rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // IndexedDB for local thumbnail storage
+        const DB_NAME = 'ChronoFrameDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'thumbnails';
+
+        class ThumbnailDB {
+            constructor() {
+                this.db = null;
+            }
+
+            async init() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => {
+                        this.db = request.result;
+                        resolve(this.db);
+                    };
+                    
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains(STORE_NAME)) {
+                            // Store thumbnails with file path as key
+                            const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                            store.createIndex('path', 'path', { unique: true });
+                            store.createIndex('lastModified', 'lastModified', { unique: false });
+                        }
+                    };
+                });
+            }
+
+            async saveThumbnail(filePath, lastModified, thumbnailData, metadata) {
+                if (!this.db) await this.init();
+                
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    
+                    const data = {
+                        id: filePath + '_' + lastModified,
+                        path: filePath,
+                        lastModified: lastModified,
+                        thumbnail: thumbnailData,
+                        metadata: metadata,
+                        savedAt: Date.now()
+                    };
+                    
+                    const request = store.put(data);
+                    request.onsuccess = () => resolve(data);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async getThumbnail(filePath, lastModified) {
+                if (!this.db) await this.init();
+                
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.get(filePath + '_' + lastModified);
+                    
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async clearOldThumbnails(daysOld = 30) {
+                if (!this.db) await this.init();
+                
+                const cutoffTime = Date.now() - (daysOld * 24 * 60 * 60 * 1000);
+                
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.openCursor();
+                    
+                    request.onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        if (cursor) {
+                            if (cursor.value.savedAt < cutoffTime) {
+                                cursor.delete();
+                            }
+                            cursor.continue();
+                        } else {
+                            resolve();
+                        }
+                    };
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async getDBSize() {
+                if (!this.db) await this.init();
+                
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.count();
+                    
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+        }
+
+        // Create thumbnail from image
+        const createThumbnail = (img, maxWidth = 400) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > maxWidth) {
+                height = (height * maxWidth) / width;
+                width = maxWidth;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            
+            ctx.drawImage(img, 0, 0, width, height);
+            return canvas.toDataURL('image/jpeg', 0.8);
+        };
+
+        function PhotoTimelineApp() {
+            const [photos, setPhotos] = useState([]);
+            const [processing, setProcessing] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [selectedPhoto, setSelectedPhoto] = useState(null);
+            const [viewMode, setViewMode] = useState('timeline'); // timeline, grid, map
+            const [gridSize, setGridSize] = useState('3x3'); // 2x2, 3x3, 4x4, 5x5, auto
+            const [cacheStats, setCacheStats] = useState({ total: 0, hits: 0, misses: 0 });
+            const [showTimelineNav, setShowTimelineNav] = useState(false);
+            const [activeYear, setActiveYear] = useState(null);
+            const [activeMonth, setActiveMonth] = useState(null);
+            const [navPosition, setNavPosition] = useState({ x: null, y: null });
+            const [isDragging, setIsDragging] = useState(false);
+            const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+            const fileInputRef = useRef(null);
+            const individualFileInputRef = useRef(null);
+            const thumbnailDB = useRef(new ThumbnailDB());
+            const yearRefs = useRef({});
+            const navRef = useRef(null);
+
+            useEffect(() => {
+                // Initialize IndexedDB on component mount
+                thumbnailDB.current.init().then(() => {
+                    thumbnailDB.current.getDBSize().then(count => {
+                        setCacheStats(prev => ({ ...prev, total: count }));
+                    });
+                    // Clean old thumbnails
+                    thumbnailDB.current.clearOldThumbnails(30);
+                });
+            }, []);
+
+            // Extract EXIF data from image
+            // IMPORTANT: This function works 100% LOCALLY
+            // - Files are read using FileReader API (browser-native)
+            // - No data is sent to any server
+            // - Everything happens in your browser's memory
+            // - Photos never leave your computer
+            const extractMetadata = (file) => {
+                return new Promise(async (resolve) => {
+                    // Check if we have a cached thumbnail
+                    const filePath = file.webkitRelativePath || file.name;
+                    let cachedData = null;
+                    
+                    try {
+                        cachedData = await thumbnailDB.current.getThumbnail(filePath, file.lastModified);
+                        if (cachedData) {
+                            setCacheStats(prev => ({ ...prev, hits: prev.hits + 1 }));
+                            // Return cached data immediately
+                            resolve({
+                                ...cachedData.metadata,
+                                url: cachedData.thumbnail,
+                                fromCache: true
+                            });
+                            return;
+                        } else {
+                            setCacheStats(prev => ({ ...prev, misses: prev.misses + 1 }));
+                        }
+                    } catch (err) {
+                        console.log('Cache miss:', filePath);
+                    }
+
+                    // No cache, process the file
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.onload = async () => {
+                            EXIF.getData(img, async function() {
+                                const exifData = EXIF.getAllTags(this);
+                                
+                                // Try to get the date from various EXIF fields
+                                let dateStr = exifData.DateTimeOriginal || 
+                                            exifData.DateTime || 
+                                            exifData.DateTimeDigitized;
+                                
+                                let photoDate;
+                                if (dateStr) {
+                                    // Parse EXIF date format: "YYYY:MM:DD HH:MM:SS"
+                                    const parts = dateStr.split(' ');
+                                    const dateParts = parts[0].split(':');
+                                    const timeParts = parts[1] ? parts[1].split(':') : ['00', '00', '00'];
+                                    photoDate = new Date(
+                                        parseInt(dateParts[0]),
+                                        parseInt(dateParts[1]) - 1,
+                                        parseInt(dateParts[2]),
+                                        parseInt(timeParts[0]),
+                                        parseInt(timeParts[1]),
+                                        parseInt(timeParts[2])
+                                    );
+                                } else {
+                                    // Fallback to file modification date
+                                    photoDate = new Date(file.lastModified);
+                                }
+
+                                // Create thumbnail
+                                const thumbnail = createThumbnail(img);
+
+                                const metadata = {
+                                    name: file.name,
+                                    url: thumbnail, // Use thumbnail instead of full image
+                                    fullUrl: e.target.result, // Keep full image for modal
+                                    date: photoDate,
+                                    size: file.size,
+                                    type: file.type,
+                                    camera: exifData.Model || 'Unknown',
+                                    width: exifData.PixelXDimension || img.width,
+                                    height: exifData.PixelYDimension || img.height,
+                                    iso: exifData.ISOSpeedRatings,
+                                    aperture: exifData.FNumber,
+                                    exposure: exifData.ExposureTime,
+                                    gps: exifData.GPSLatitude ? {
+                                        lat: exifData.GPSLatitude,
+                                        lng: exifData.GPSLongitude
+                                    } : null,
+                                    fromCache: false
+                                };
+
+                                // Save to IndexedDB
+                                try {
+                                    await thumbnailDB.current.saveThumbnail(
+                                        filePath,
+                                        file.lastModified,
+                                        thumbnail,
+                                        {
+                                            name: file.name,
+                                            date: photoDate,
+                                            size: file.size,
+                                            type: file.type,
+                                            camera: metadata.camera,
+                                            width: metadata.width,
+                                            height: metadata.height,
+                                            iso: metadata.iso,
+                                            aperture: metadata.aperture,
+                                            exposure: metadata.exposure,
+                                            gps: metadata.gps
+                                        }
+                                    );
+                                    setCacheStats(prev => ({ ...prev, total: prev.total + 1 }));
+                                } catch (err) {
+                                    console.log('Failed to cache:', err);
+                                }
+
+                                resolve(metadata);
+                            });
+                        };
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            };
+
+            const handleFileSelect = async (event) => {
+                // LOCAL PROCESSING ONLY:
+                // When you "select" files, the browser gives us READ-ONLY access
+                // We scan metadata and display photos - nothing is uploaded anywhere!
+                const files = Array.from(event.target.files);
+                
+                console.log('Files selected:', files.length);
+                
+                if (files.length === 0) {
+                    console.log('No files selected');
+                    return;
+                }
+
+                setProcessing(true);
+                setProgress(0);
+
+                const photoData = [];
+                let processedCount = 0;
+                let skippedCount = 0;
+                const skippedFiles = [];
+                
+                // Supported image types (including iPhone HEIC)
+                const supportedTypes = [
+                    'image/jpeg',
+                    'image/jpg', 
+                    'image/png',
+                    'image/gif',
+                    'image/webp',
+                    'image/bmp',
+                    'image/tiff',
+                    'image/heic',
+                    'image/heif',
+                    'image/heic-sequence',
+                    'image/heif-sequence'
+                ];
+                
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    console.log('Processing file:', file.name, file.type);
+                    
+                    // Check if it's an image by extension if type is not set
+                    const fileName = file.name.toLowerCase();
+                    const isImageByExtension = fileName.endsWith('.jpg') || 
+                                              fileName.endsWith('.jpeg') || 
+                                              fileName.endsWith('.png') || 
+                                              fileName.endsWith('.gif') || 
+                                              fileName.endsWith('.webp') || 
+                                              fileName.endsWith('.bmp') ||
+                                              fileName.endsWith('.heic') ||
+                                              fileName.endsWith('.heif') ||
+                                              fileName.endsWith('.tiff') ||
+                                              fileName.endsWith('.tif');
+                    
+                    const isSupported = file.type.startsWith('image/') || isImageByExtension;
+                    
+                    if (isSupported) {
+                        try {
+                            const metadata = await extractMetadata(file);
+                            photoData.push(metadata);
+                            processedCount++;
+                            console.log('Processed:', file.name);
+                        } catch (error) {
+                            console.error('Error processing file:', file.name, error);
+                            skippedFiles.push(file.name);
+                            skippedCount++;
+                        }
+                        setProgress(((i + 1) / files.length) * 100);
+                    } else {
+                        skippedCount++;
+                    }
+                }
+
+                console.log('Total processed:', processedCount, 'out of', files.length);
+                console.log('Skipped:', skippedCount);
+
+                if (processedCount === 0) {
+                    alert(`No image files found in the selected folder.\n\nFiles selected: ${files.length}\nImage files found: 0\n\nPlease select a folder containing photos (JPG, PNG, HEIC, etc.)`);
+                    setProcessing(false);
+                    return;
+                }
+
+                // Show summary if some files were skipped
+                if (skippedCount > 0 && processedCount > 0) {
+                    console.log('Skipped files:', skippedFiles);
+                    const message = `✅ Successfully processed ${processedCount} photos!\n\n` +
+                                  `ℹ️ Skipped ${skippedCount} non-image files.`;
+                    // Don't alert for every operation, just log it
+                    console.log(message);
+                }
+
+                // Combine with existing photos and remove duplicates based on name+size+date
+                const existingPhotos = [...photos];
+                const newPhotos = photoData.filter(newPhoto => {
+                    return !existingPhotos.some(existing => 
+                        existing.name === newPhoto.name && 
+                        existing.size === newPhoto.size &&
+                        existing.date.getTime() === newPhoto.date.getTime()
+                    );
+                });
+
+                console.log('New unique photos:', newPhotos.length);
+
+                const allPhotos = [...existingPhotos, ...newPhotos];
+                
+                // Sort by date (newest first)
+                allPhotos.sort((a, b) => b.date - a.date);
+                setPhotos(allPhotos);
+                setProcessing(false);
+                
+                console.log('Total photos now:', allPhotos.length);
+                
+                // Reset file inputs so same folder can be selected again
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                if (individualFileInputRef.current) individualFileInputRef.current.value = '';
+            };
+
+            const groupPhotosByTimeline = () => {
+                const grouped = {};
+                
+                photos.forEach(photo => {
+                    const year = photo.date.getFullYear();
+                    const month = photo.date.toLocaleString('default', { month: 'long' });
+                    
+                    if (!grouped[year]) {
+                        grouped[year] = {};
+                    }
+                    if (!grouped[year][month]) {
+                        grouped[year][month] = [];
+                    }
+                    grouped[year][month].push(photo);
+                });
+
+                return grouped;
+            };
+
+            const formatDate = (date) => {
+                return date.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+            };
+
+            const formatTime = (date) => {
+                return date.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            };
+
+            const formatFileSize = (bytes) => {
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            };
+
+            const scrollToYear = (year) => {
+                const element = yearRefs.current[year];
+                if (element) {
+                    setActiveYear(year);
+                    setActiveMonth(null);
+                    
+                    // Get header height for accurate offset
+                    const header = document.querySelector('.app-header');
+                    const headerHeight = header ? header.offsetHeight : 120;
+                    const additionalOffset = 20; // Extra padding
+                    
+                    const elementPosition = element.getBoundingClientRect().top;
+                    const offsetPosition = elementPosition + window.pageYOffset - headerHeight - additionalOffset;
+
+                    window.scrollTo({
+                        top: offsetPosition,
+                        behavior: 'smooth'
+                    });
+
+                    // Add highlight effect
+                    element.classList.add('highlight');
+                    setTimeout(() => {
+                        element.classList.remove('highlight');
+                    }, 1500);
+                }
+            };
+
+            const scrollToMonth = (year, month) => {
+                const element = yearRefs.current[`${year}-${month}`];
+                if (element) {
+                    setActiveYear(year);
+                    setActiveMonth(month);
+                    
+                    // Get header height for accurate offset
+                    const header = document.querySelector('.app-header');
+                    const headerHeight = header ? header.offsetHeight : 120;
+                    const additionalOffset = 20; // Extra padding
+                    
+                    const elementPosition = element.getBoundingClientRect().top;
+                    const offsetPosition = elementPosition + window.pageYOffset - headerHeight - additionalOffset;
+
+                    window.scrollTo({
+                        top: offsetPosition,
+                        behavior: 'smooth'
+                    });
+
+                    // Add highlight effect
+                    element.classList.add('highlight');
+                    setTimeout(() => {
+                        element.classList.remove('highlight');
+                    }, 1500);
+                }
+            };
+
+            // Handle dragging
+            const handleMouseDown = (e) => {
+                if (navRef.current && e.target.closest('.timeline-nav-header')) {
+                    setIsDragging(true);
+                    const rect = navRef.current.getBoundingClientRect();
+                    setDragOffset({
+                        x: e.clientX - rect.left,
+                        y: e.clientY - rect.top
+                    });
+                }
+            };
+
+            const handleMouseMove = (e) => {
+                if (isDragging && navRef.current) {
+                    const newX = e.clientX - dragOffset.x;
+                    const newY = e.clientY - dragOffset.y;
+                    
+                    // Keep within viewport bounds
+                    const maxX = window.innerWidth - navRef.current.offsetWidth;
+                    const maxY = window.innerHeight - navRef.current.offsetHeight;
+                    
+                    setNavPosition({
+                        x: Math.max(0, Math.min(newX, maxX)),
+                        y: Math.max(0, Math.min(newY, maxY))
+                    });
+                }
+            };
+
+            const handleMouseUp = () => {
+                setIsDragging(false);
+            };
+
+            useEffect(() => {
+                if (isDragging) {
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                    return () => {
+                        document.removeEventListener('mousemove', handleMouseMove);
+                        document.removeEventListener('mouseup', handleMouseUp);
+                    };
+                }
+            }, [isDragging, dragOffset]);
+
+            const timelineData = groupPhotosByTimeline();
+            const years = Object.keys(timelineData).sort((a, b) => b - a);
+
+            return (
+                <div className="app-container">
+                    <header className="app-header">
+                        <div className="header-content">
+                            <div>
+                                <h1 className="app-title">ChronoFrame</h1>
+                                <p className="app-subtitle">🔒 100% Offline • Your Photos Stay on Your Computer</p>
+                            </div>
+                            <div className="stats-bar">
+                                <div className="stat-item">
+                                    <span className="stat-value">{photos.length}</span>
+                                    <span className="stat-label">Photos</span>
+                                </div>
+                                <div className="stat-item">
+                                    <span className="stat-value">{years.length}</span>
+                                    <span className="stat-label">Years</span>
+                                </div>
+                                {cacheStats.total > 0 && (
+                                    <div className="cache-stats">
+                                        <div className="cache-stat-item">
+                                            💾 <span className="cache-stat-value">{cacheStats.total}</span> cached
+                                        </div>
+                                        {(cacheStats.hits > 0 || cacheStats.misses > 0) && (
+                                            <div className="cache-stat-item">
+                                                ⚡ <span className="cache-stat-value">{cacheStats.hits}</span> instant loads
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </header>
+
+                    {photos.length === 0 && (
+                        <section className="controls-section">
+                            <div 
+                                className="scan-area"
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                <div className="scan-icon">📁</div>
+                                <div className="scan-text">Scan a Folder with Your Photos</div>
+                                <div className="scan-hint">
+                                    100% Local • No Upload • Privacy First • Supports JPG, PNG, HEIC (iPhone), and more
+                                </div>
+                            </div>
+                            
+                            <div style={{ textAlign: 'center', margin: '1.5rem 0', color: '#666', fontSize: '0.875rem' }}>
+                                OR
+                            </div>
+                            
+                            <div 
+                                className="scan-area"
+                                onClick={() => individualFileInputRef.current?.click()}
+                                style={{ borderStyle: 'solid', borderWidth: '2px' }}
+                            >
+                                <div className="scan-icon">📸</div>
+                                <div className="scan-text">Select Individual Photos</div>
+                                <div className="scan-hint">
+                                    Works offline • Supports all formats including HEIC • Nothing uploaded
+                                </div>
+                            </div>
+                        </section>
+                    )}
+
+                    {processing && (
+                        <div className="processing-bar">
+                            <div className="progress-container">
+                                <div 
+                                    className="progress-fill"
+                                    style={{ width: `${progress}%` }}
+                                />
+                            </div>
+                            <div className="progress-text">
+                                {photos.length > 0 ? 'Adding more photos...' : 'Scanning photos and extracting metadata...'} {Math.round(progress)}%
+                            </div>
+                        </div>
+                    )}
+
+                    {photos.length > 0 && !processing && (
+                        <>
+                            <div className="view-controls">
+                                <button 
+                                    className={`view-btn ${viewMode === 'timeline' ? 'active' : ''}`}
+                                    onClick={() => setViewMode('timeline')}
+                                >
+                                    📅 Timeline View
+                                </button>
+                                <button 
+                                    className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                                    onClick={() => setViewMode('grid')}
+                                >
+                                    ▦ Grid View
+                                </button>
+                                
+                                <div className="grid-size-selector">
+                                    <span className="grid-size-label">Grid Size:</span>
+                                    <button 
+                                        className={`grid-size-btn ${gridSize === '2x2' ? 'active' : ''}`}
+                                        onClick={() => setGridSize('2x2')}
+                                        title="2 columns"
+                                    >
+                                        2×2
+                                    </button>
+                                    <button 
+                                        className={`grid-size-btn ${gridSize === '3x3' ? 'active' : ''}`}
+                                        onClick={() => setGridSize('3x3')}
+                                        title="3 columns"
+                                    >
+                                        3×3
+                                    </button>
+                                    <button 
+                                        className={`grid-size-btn ${gridSize === '4x4' ? 'active' : ''}`}
+                                        onClick={() => setGridSize('4x4')}
+                                        title="4 columns"
+                                    >
+                                        4×4
+                                    </button>
+                                    <button 
+                                        className={`grid-size-btn ${gridSize === '5x5' ? 'active' : ''}`}
+                                        onClick={() => setGridSize('5x5')}
+                                        title="5 columns"
+                                    >
+                                        5×5
+                                    </button>
+                                    <button 
+                                        className={`grid-size-btn ${gridSize === 'auto' ? 'active' : ''}`}
+                                        onClick={() => setGridSize('auto')}
+                                        title="Auto-fit to screen"
+                                    >
+                                        Auto
+                                    </button>
+                                </div>
+
+                                <button 
+                                    className="view-btn"
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    📁 Add Folder
+                                </button>
+                                <button 
+                                    className="view-btn"
+                                    onClick={() => individualFileInputRef.current?.click()}
+                                >
+                                    📸 Add Photos
+                                </button>
+                                <button 
+                                    className="view-btn"
+                                    onClick={() => {
+                                        if (confirm('Clear all photos? (Cache will remain for faster loading later)')) {
+                                            setPhotos([]);
+                                            setCacheStats(prev => ({ ...prev, hits: 0, misses: 0 }));
+                                        }
+                                    }}
+                                    style={{ marginLeft: 'auto', background: 'rgba(220, 53, 69, 0.1)', borderColor: '#dc3545', color: '#dc3545' }}
+                                >
+                                    🗑️ Clear All
+                                </button>
+                            </div>
+
+                            <div className="timeline-container">
+                                {viewMode === 'timeline' && years.map((year, yearIndex) => (
+                                    <div 
+                                        key={year} 
+                                        className="timeline-year"
+                                        style={{ animationDelay: `${yearIndex * 0.1}s` }}
+                                        ref={el => yearRefs.current[year] = el}
+                                    >
+                                        <h2 className="year-header">{year}</h2>
+                                        
+                                        {Object.keys(timelineData[year])
+                                            .sort((a, b) => {
+                                                const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                                                              'July', 'August', 'September', 'October', 'November', 'December'];
+                                                return months.indexOf(b) - months.indexOf(a);
+                                            })
+                                            .map(month => (
+                                                <div 
+                                                    key={month} 
+                                                    className="timeline-month"
+                                                    ref={el => yearRefs.current[`${year}-${month}`] = el}
+                                                >
+                                                    <h3 className="month-header">{month}</h3>
+                                                    <div className={`photos-grid grid-${gridSize}`}>
+                                                        {timelineData[year][month].map((photo, index) => (
+                                                            <div 
+                                                                key={index}
+                                                                className="photo-card"
+                                                                onClick={() => setSelectedPhoto(photo)}
+                                                                style={{ animationDelay: `${index * 0.05}s` }}
+                                                            >
+                                                                <img 
+                                                                    src={photo.url}
+                                                                    alt={photo.name}
+                                                                    className="photo-image"
+                                                                />
+                                                                <div className="photo-info">
+                                                                    <div className="photo-date">
+                                                                        {formatDate(photo.date)}
+                                                                        {photo.fromCache && <span style={{marginLeft: '0.5rem', fontSize: '0.7rem', color: 'var(--color-gold)'}}>⚡</span>}
+                                                                    </div>
+                                                                    <div className="photo-time">
+                                                                        {formatTime(photo.date)}
+                                                                    </div>
+                                                                    <div className="photo-meta">
+                                                                        {photo.camera} • {photo.width} × {photo.height}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        
+                                        {yearIndex < years.length - 1 && (
+                                            <div className="decorative-line"></div>
+                                        )}
+                                    </div>
+                                ))}
+
+                                {viewMode === 'grid' && (
+                                    <div className={`photos-grid grid-${gridSize}`}>
+                                        {photos.map((photo, index) => (
+                                            <div 
+                                                key={index}
+                                                className="photo-card"
+                                                onClick={() => setSelectedPhoto(photo)}
+                                                style={{ animationDelay: `${index * 0.02}s` }}
+                                            >
+                                                <img 
+                                                    src={photo.url}
+                                                    alt={photo.name}
+                                                    className="photo-image"
+                                                />
+                                                <div className="photo-info">
+                                                    <div className="photo-date">
+                                                        {formatDate(photo.date)}
+                                                        {photo.fromCache && <span style={{marginLeft: '0.5rem', fontSize: '0.7rem', color: 'var(--color-gold)'}}>⚡</span>}
+                                                    </div>
+                                                    <div className="photo-time">
+                                                        {formatTime(photo.date)}
+                                                    </div>
+                                                    <div className="photo-meta">
+                                                        {photo.camera}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+
+                    {photos.length === 0 && !processing && (
+                        <div className="empty-state">
+                            <div className="empty-icon">🖼️</div>
+                            <div className="empty-text">No photos scanned yet</div>
+                            <div className="scan-hint">
+                                Click above to scan a folder from your hard disk - everything stays local!
+                            </div>
+                        </div>
+                    )}
+
+                    {selectedPhoto && (
+                        <div 
+                            className="modal-overlay"
+                            onClick={() => setSelectedPhoto(null)}
+                        >
+                            <div 
+                                className="modal-content"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <button 
+                                    className="modal-close"
+                                    onClick={() => setSelectedPhoto(null)}
+                                >
+                                    ×
+                                </button>
+                                <img 
+                                    src={selectedPhoto.fullUrl || selectedPhoto.url}
+                                    alt={selectedPhoto.name}
+                                    className="modal-image"
+                                />
+                                <div className="modal-info">
+                                    <div style={{ marginBottom: '0.75rem' }}>
+                                        <strong>📅 {formatDate(selectedPhoto.date)}</strong> at {formatTime(selectedPhoto.date)}
+                                    </div>
+                                    <div style={{ fontSize: '0.875rem', color: 'var(--color-sepia)' }}>
+                                        📷 {selectedPhoto.camera}<br/>
+                                        📐 {selectedPhoto.width} × {selectedPhoto.height}px<br/>
+                                        💾 {formatFileSize(selectedPhoto.size)}<br/>
+                                        {selectedPhoto.iso && `ISO ${selectedPhoto.iso}`}
+                                        {selectedPhoto.aperture && ` • f/${selectedPhoto.aperture}`}
+                                        {selectedPhoto.exposure && ` • ${selectedPhoto.exposure}s`}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*,.heic,.heif"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                        webkitdirectory=""
+                        multiple
+                    />
+                    
+                    <input
+                        ref={individualFileInputRef}
+                        type="file"
+                        accept="image/*,.heic,.heif"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                        multiple
+                    />
+
+                    {/* Timeline Navigator */}
+                    {photos.length > 0 && viewMode === 'timeline' && (
+                        <>
+                            <button 
+                                className={`timeline-nav-toggle ${showTimelineNav ? 'active' : ''}`}
+                                onClick={() => setShowTimelineNav(!showTimelineNav)}
+                                title="Timeline Navigator"
+                            >
+                                📅
+                            </button>
+
+                            {showTimelineNav && (
+                                <div 
+                                    ref={navRef}
+                                    className={`timeline-navigator ${isDragging ? 'dragging' : 'draggable'}`}
+                                    style={navPosition.x !== null ? {
+                                        left: `${navPosition.x}px`,
+                                        top: `${navPosition.y}px`,
+                                        right: 'auto',
+                                        transform: 'none'
+                                    } : {}}
+                                >
+                                    <div 
+                                        className="timeline-nav-header"
+                                        onMouseDown={handleMouseDown}
+                                    >
+                                        Jump to Date
+                                    </div>
+                                    {years.map(year => (
+                                        <div key={year} className="timeline-nav-year">
+                                            <button 
+                                                className={`timeline-nav-year-btn ${activeYear === year ? 'active' : ''}`}
+                                                onClick={() => scrollToYear(year)}
+                                            >
+                                                {year}
+                                            </button>
+                                            <div className="timeline-nav-months">
+                                                {Object.keys(timelineData[year])
+                                                    .sort((a, b) => {
+                                                        const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                                                                      'July', 'August', 'September', 'October', 'November', 'December'];
+                                                        return months.indexOf(b) - months.indexOf(a);
+                                                    })
+                                                    .map(month => (
+                                                        <button
+                                                            key={month}
+                                                            className={`timeline-nav-month-btn ${activeYear === year && activeMonth === month ? 'active' : ''}`}
+                                                            onClick={() => scrollToMonth(year, month)}
+                                                        >
+                                                            {month}
+                                                            <span className="timeline-nav-month-count">
+                                                                {timelineData[year][month].length}
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<PhotoTimelineApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
